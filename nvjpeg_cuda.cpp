@@ -25,11 +25,48 @@ nvjpegImage_t createImage(torch::Tensor const& image) {
   return img;
 }
 
-inline void check_nvjpeg(std::string const &message, nvjpegStatus_t code) {
-  if (NVJPEG_STATUS_SUCCESS != code){
-      throw std::runtime_error(message + ", error: " + std::to_string(code));
+
+inline const char* error_string(nvjpegStatus_t code) {
+  switch(code) {
+    case NVJPEG_STATUS_SUCCESS: return "success";
+    case NVJPEG_STATUS_NOT_INITIALIZED: return "not initialized";
+    case NVJPEG_STATUS_INVALID_PARAMETER: return "invalid parameter";
+    case NVJPEG_STATUS_BAD_JPEG: return "bad jpeg";
+    case NVJPEG_STATUS_JPEG_NOT_SUPPORTED: return "not supported";
+    case NVJPEG_STATUS_ALLOCATOR_FAILURE: return "allocation failed";
+    case NVJPEG_STATUS_EXECUTION_FAILED: return "execution failed";
+    case NVJPEG_STATUS_ARCH_MISMATCH: return "arch mismatch";
+    case NVJPEG_STATUS_INTERNAL_ERROR: return "internal error";
+    default: return "unknown";
   }
 }
+
+
+class JpegException : public std::exception {
+  nvjpegStatus_t code;
+  std::string context;
+
+  public:
+    JpegException(std::string const& _context, nvjpegStatus_t _code) :
+      code(_code), context(_context)
+    { }
+        
+    const char * what () const throw () {
+      std::stringstream ss;
+      ss << context << ", nvjpeg error " << code << ": " << error_string(code);
+      return ss.str().c_str();
+
+    }
+};
+
+inline void check_nvjpeg(std::string const &message, nvjpegStatus_t code) {
+  if (NVJPEG_STATUS_SUCCESS != code){
+      throw JpegException(message, code);
+  }
+}
+
+
+
 
 
 class JpegCoder {
@@ -108,6 +145,8 @@ void write_file(const std::string& filename, torch::Tensor& data) {
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   auto jpeg = py::class_<JpegCoder>(m, "Jpeg");
+
+  py::register_exception<JpegException>(m, "JpegException");
 
   jpeg.def(py::init<>())
       .def("encode", &JpegCoder::encode)

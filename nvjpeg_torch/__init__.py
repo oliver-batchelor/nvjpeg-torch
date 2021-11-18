@@ -1,7 +1,7 @@
 import torch
 import nvjpeg_cuda
 
-from nvjpeg_cuda import write_file
+from nvjpeg_cuda import write_file, JpegException
 
 subsampling = nvjpeg_cuda.Jpeg.Subsampling
 
