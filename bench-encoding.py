@@ -147,7 +147,7 @@ def main(args):
   print(f'turbojpeg threaded j={num_threads}: {bench_threaded(TurboJPEG, images, num_threads):>5.1f} images/s')
   
   images = [torch.from_numpy(image).cuda()] * args.n
-  print(f'nvjpeg: {bench_threaded(Jpeg, images, num_threads):>5.1f} images/s')
+  print(f'nvjpeg: {bench_threaded(Jpeg, images, 1):>5.1f} images/s')
 
 
 
