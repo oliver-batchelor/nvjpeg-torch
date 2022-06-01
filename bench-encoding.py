@@ -1,11 +1,14 @@
 from turbojpeg import TurboJPEG
 from nvjpeg_torch import Jpeg
+import torch
 
 import cv2
 import time
 
 from functools import partial
 
+
+import multiprocessing as mp
 from threading import Thread
 from queue import Queue
 
@@ -13,7 +16,7 @@ import gc
 
 import argparse
 
-class Timer:    
+class Timer:     
     def __enter__(self):
         self.start = time.time()
         return self
@@ -24,14 +27,18 @@ class Timer:
 
 
 class CvJpeg(object):
-  def encode(self, image):
-    result, compressed = cv2.imencode('.jpg', image)
+  def encode(self, image, quality):
+    result, compressed = cv2.imencode('.jpg', image, quality)
 
 
 class NvJpeg(object):
-  def encode(self, image):
+  def __init__(self):
+    self.jpeg = Jpeg()
+
+  def encode(self, image, quality):
     image = torch.from_numpy(image).cuda()
-    compressed = Jpeg.encode(image)
+    compressed = self.jpeg.encode(image, quality)
+
 
 class Threaded(object):
   def __init__(self, create_jpeg, size=8):
@@ -69,6 +76,42 @@ class Threaded(object):
         t.join()
       
 
+class Multiprocess(object):
+  def __init__(self, create_jpeg, size=8):
+        # Image file writers
+    self.queue = mp.Queue(size)
+    self.processes = [mp.Process(target=self.encode_process, args=()) 
+        for _ in range(size)]
+
+    self.create_jpeg = create_jpeg
+    
+    for p in self.processes:
+        p.start()
+
+
+  def encode_process(self):
+    jpeg = self.create_jpeg()
+    item = self.queue.get()
+    while item is not None:
+      image, quality = item
+
+      result = jpeg.encode(image, quality)
+      item = self.queue.get()
+
+
+  def encode(self, image, quality=90):
+    self.queue.put((image, quality))
+
+
+  def stop(self):
+      for _ in self.processes:
+          self.queue.put(None)
+
+      for t in self.processes:
+        t.join()
+      
+
+
 
 def bench_threaded(create_encoder, images, threads):
   threads = Threaded(create_encoder, threads)
@@ -102,8 +145,9 @@ def main(args):
 
 
   print(f'turbojpeg threaded j={num_threads}: {bench_threaded(TurboJPEG, images, num_threads):>5.1f} images/s')
-
-  print(f'nvjpeg: {bench_threaded(NvJpeg, images, 1):>5.1f} images/s')
+  
+  images = [torch.from_numpy(image).cuda()] * args.n
+  print(f'nvjpeg: {bench_threaded(Jpeg, images, num_threads):>5.1f} images/s')
 
 
 

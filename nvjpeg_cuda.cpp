@@ -98,23 +98,24 @@ class JpegCoder {
 
 
   torch::Tensor encode(torch::Tensor const& data, int quality = 90, nvjpegChromaSubsampling_t subsampling = NVJPEG_CSS_422) {
+    py::gil_scoped_release release;
+    
     TORCH_CHECK(data.is_cuda(), "Input image should be on CUDA device");
     TORCH_CHECK(data.dtype() == torch::kU8, "Input image should be uint8");
     TORCH_CHECK(data.dim() == 3, "Input data should be a 3-dimensional tensor (H, W, C)");
 
-    at::cuda::CUDAStream stream = c10::cuda::getCurrentCUDAStream();
-    nvjpegEncoderParams_t params = createParams(quality, subsampling, stream.stream());
+    nvjpegEncoderParams_t params = createParams(quality, subsampling);
     nvjpegImage_t image = createImage(data);
 
     check_nvjpeg("nvjpegEncodeImage", 
       nvjpegEncodeImage(nv_handle, enc_state, params, 
-        &image, NVJPEG_INPUT_BGRI, data.size(1), data.size(0), stream));
+        &image, NVJPEG_INPUT_BGRI, data.size(1), data.size(0), nullptr));
 
     size_t length;
-    nvjpegEncodeRetrieveBitstream(nv_handle, enc_state, NULL, &length, stream.stream());
+    nvjpegEncodeRetrieveBitstream(nv_handle, enc_state, NULL, &length, nullptr);
     auto buffer = torch::empty({ int(length) }, torch::TensorOptions().dtype(torch::kUInt8));
 
-    nvjpegEncodeRetrieveBitstream(nv_handle, enc_state, (unsigned char*)buffer.data_ptr(), &length, stream.stream());
+    nvjpegEncodeRetrieveBitstream(nv_handle, enc_state, (unsigned char*)buffer.data_ptr(), &length, nullptr);
     nvjpegEncoderParamsDestroy(params);
 
     return buffer;
