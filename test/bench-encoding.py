@@ -8,7 +8,6 @@ import time
 from functools import partial
 
 
-import multiprocessing as mp
 from threading import Thread
 from queue import Queue
 
@@ -73,41 +72,6 @@ class Threaded(object):
           self.queue.put(None)
 
       for t in self.threads:
-        t.join()
-      
-
-class Multiprocess(object):
-  def __init__(self, create_jpeg, size=8):
-        # Image file writers
-    self.queue = mp.Queue(size)
-    self.processes = [mp.Process(target=self.encode_process, args=()) 
-        for _ in range(size)]
-
-    self.create_jpeg = create_jpeg
-    
-    for p in self.processes:
-        p.start()
-
-
-  def encode_process(self):
-    jpeg = self.create_jpeg()
-    item = self.queue.get()
-    while item is not None:
-      image, quality = item
-
-      result = jpeg.encode(image, quality)
-      item = self.queue.get()
-
-
-  def encode(self, image, quality=90):
-    self.queue.put((image, quality))
-
-
-  def stop(self):
-      for _ in self.processes:
-          self.queue.put(None)
-
-      for t in self.processes:
         t.join()
       
 

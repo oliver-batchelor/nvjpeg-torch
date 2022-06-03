@@ -21,7 +21,7 @@ if __name__=='__main__':
 
   jpeg = Jpeg()
 
-  data = jpeg.encode(torch.from_numpy(image).cuda())
+  data = jpeg.encode(torch.from_numpy(image).cuda(), input_format=Jpeg.BGR)
 
   filename = path.join("out", path.basename(args.filename))
   write_file(filename, data)

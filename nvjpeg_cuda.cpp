@@ -10,7 +10,7 @@
 
 #include <nvjpeg.h>
 
-
+// Should take into account input format, currently supports only interleaved
 nvjpegImage_t createImage(torch::Tensor const& image) {
   nvjpegImage_t img; 
 
@@ -97,7 +97,7 @@ class JpegCoder {
   }
 
 
-  torch::Tensor encode(torch::Tensor const& data, int quality = 90, nvjpegChromaSubsampling_t subsampling = NVJPEG_CSS_422) {
+  torch::Tensor encode(torch::Tensor const& data, int quality = 90, nvjpegInputFormat_t input_format = NVJPEG_INPUT_BGRI, nvjpegChromaSubsampling_t subsampling = NVJPEG_CSS_422) {
     py::gil_scoped_release release;
     
     TORCH_CHECK(data.is_cuda(), "Input image should be on CUDA device");
@@ -109,7 +109,7 @@ class JpegCoder {
 
     check_nvjpeg("nvjpegEncodeImage", 
       nvjpegEncodeImage(nv_handle, enc_state, params, 
-        &image, NVJPEG_INPUT_BGRI, data.size(1), data.size(0), nullptr));
+        &image, input_format, data.size(1), data.size(0), nullptr));
 
     size_t length;
     nvjpegEncodeRetrieveBitstream(nv_handle, enc_state, NULL, &length, nullptr);
@@ -154,10 +154,19 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
       .def("__repr__", [](const JpegCoder &a) { return "Jpeg"; });
   
   py::enum_<nvjpegChromaSubsampling_t>(jpeg, "Subsampling")
-    .value("css_444", nvjpegChromaSubsampling_t::NVJPEG_CSS_444)
-    .value("css_422", nvjpegChromaSubsampling_t::NVJPEG_CSS_422)
-    .value("css_gray", nvjpegChromaSubsampling_t::NVJPEG_CSS_GRAY)
+    .value("CSS_444", nvjpegChromaSubsampling_t::NVJPEG_CSS_444)
+    .value("CSS_422", nvjpegChromaSubsampling_t::NVJPEG_CSS_422)
+    .value("CSS_GRAY", nvjpegChromaSubsampling_t::NVJPEG_CSS_GRAY)
     .export_values();
+
+  // Note need to update createImage to properly support non interleaved formats
+  py::enum_<nvjpegInputFormat_t>(jpeg, "InputFormat")
+    .value("BGR", nvjpegInputFormat_t::NVJPEG_INPUT_BGR)
+    .value("RGB", nvjpegInputFormat_t::NVJPEG_INPUT_RGB)
+    .value("BGRI", nvjpegInputFormat_t::NVJPEG_INPUT_BGRI)
+    .value("RGBI", nvjpegInputFormat_t::NVJPEG_INPUT_RGBI)
+    .export_values();
+
   
   m.def("write_file", &write_file);
 }
