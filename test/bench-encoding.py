@@ -35,7 +35,7 @@ class NvJpeg(object):
     self.jpeg = Jpeg()
 
   def encode(self, image, quality):
-    image = torch.from_numpy(image).cuda()
+    image = image.cuda()
     compressed = self.jpeg.encode(image, quality)
 
 
@@ -109,10 +109,17 @@ def main(args):
 
 
   print(f'turbojpeg threaded j={num_threads}: {bench_threaded(TurboJPEG, images, num_threads):>5.1f} images/s')
-  
-  images = [torch.from_numpy(image).cuda()] * args.n
-  print(f'nvjpeg: {bench_threaded(Jpeg, images, 1):>5.1f} images/s')
 
+
+  images = [torch.from_numpy(image)] * args.n
+  print(f'nvjpeg (on cpu): {bench_threaded(NvJpeg, images, 1):>5.1f} images/s')
+
+  images = [torch.from_numpy(image).pin_memory()] * args.n
+  print(f'nvjpeg (pinned): {bench_threaded(NvJpeg, images, 1):>5.1f} images/s')
+
+
+  images = [torch.from_numpy(image).cuda()] * args.n
+  print(f'nvjpeg (on gpu): {bench_threaded(NvJpeg, images, 1):>5.1f} images/s')
 
 
 if __name__=='__main__':
