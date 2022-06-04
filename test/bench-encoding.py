@@ -85,10 +85,9 @@ def bench_threaded(create_encoder, images, threads):
       threads.encode(image)
 
     threads.stop()
+    torch.cuda.synchronize()
 
   return len(images) / t.interval
-
-
 
 
 def bench_encoder(create_encoder, images):

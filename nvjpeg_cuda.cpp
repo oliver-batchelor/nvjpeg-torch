@@ -10,8 +10,10 @@
 
 #include <nvjpeg.h>
 
-// Should take into account input format, currently supports only interleaved
-nvjpegImage_t createImage(torch::Tensor const& image) {
+nvjpegImage_t interleavedImage(torch::Tensor const& image) {
+  TORCH_CHECK(image.dim() == 3 && image.size(2) == 3, 
+    "for interleaved (BGRI, RGBI) expected 3D tensor (H, W, C)");
+
   nvjpegImage_t img; 
 
   for(int i = 0; i < NVJPEG_MAX_COMPONENT; i++){
@@ -22,6 +24,29 @@ nvjpegImage_t createImage(torch::Tensor const& image) {
   img.pitch[0] = (unsigned int)at::stride(image, 0);
   img.channel[0] = (unsigned char*)image.data_ptr();
 
+  return img;
+}
+
+
+nvjpegImage_t planarImage(torch::Tensor const& image) {
+  TORCH_CHECK(image.dim() == 3 && image.size(0) == 3, 
+    "for planar (BGR, RGB) expected 3D tensor (C, H, W)");
+
+  nvjpegImage_t img; 
+
+  for(int i = 0; i < NVJPEG_MAX_COMPONENT; i++){
+      img.channel[i] = nullptr;
+      img.pitch[i] = 0;
+  }
+
+  size_t plane_stride = at::stride(image, 0);
+
+  for(int i = 0; i < 3; i++) {
+    img.pitch[i] = (unsigned int)at::stride(image, 1);
+    img.channel[i] = (unsigned char*)image.data_ptr() + plane_stride * i;
+  }
+  
+  
   return img;
 }
 
@@ -67,8 +92,6 @@ inline void check_nvjpeg(std::string const &message, nvjpegStatus_t code) {
 
 
 
-
-
 class JpegCoder {
   public:
 
@@ -96,20 +119,35 @@ class JpegCoder {
     return params;
   }
 
+  nvjpegImage_t createImage(torch::Tensor const& data, nvjpegInputFormat_t input_format, size_t &width, size_t &height) const {
+    TORCH_CHECK(data.is_cuda(), "Input image should be on CUDA device");
+    TORCH_CHECK(data.dtype() == torch::kU8, "Input image should be uint8");
+    TORCH_CHECK(data.is_contiguous(), "Input data should be contiguous");
+
+    bool interleaved = input_format == NVJPEG_INPUT_BGRI || input_format == NVJPEG_INPUT_RGBI;
+
+    if(interleaved) {
+      width = data.size(1);
+      height = data.size(0);
+      return interleavedImage(data);
+    } else {
+      width = data.size(2);
+      height = data.size(1);
+      return planarImage(data);
+    }
+  }
+
 
   torch::Tensor encode(torch::Tensor const& data, int quality = 90, nvjpegInputFormat_t input_format = NVJPEG_INPUT_BGRI, nvjpegChromaSubsampling_t subsampling = NVJPEG_CSS_422) {
     py::gil_scoped_release release;
-    
-    TORCH_CHECK(data.is_cuda(), "Input image should be on CUDA device");
-    TORCH_CHECK(data.dtype() == torch::kU8, "Input image should be uint8");
-    TORCH_CHECK(data.dim() == 3, "Input data should be a 3-dimensional tensor (H, W, C)");
+    size_t width, height;
 
     nvjpegEncoderParams_t params = createParams(quality, subsampling);
-    nvjpegImage_t image = createImage(data);
+    nvjpegImage_t image = createImage(data, input_format, width, height);
 
     check_nvjpeg("nvjpegEncodeImage", 
       nvjpegEncodeImage(nv_handle, enc_state, params, 
-        &image, input_format, data.size(1), data.size(0), nullptr));
+        &image, input_format, width, height, nullptr));
 
     size_t length;
     nvjpegEncodeRetrieveBitstream(nv_handle, enc_state, NULL, &length, nullptr);
@@ -159,7 +197,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     .value("CSS_GRAY", nvjpegChromaSubsampling_t::NVJPEG_CSS_GRAY)
     .export_values();
 
-  // Note need to update createImage to properly support non interleaved formats
   py::enum_<nvjpegInputFormat_t>(jpeg, "InputFormat")
     .value("BGR", nvjpegInputFormat_t::NVJPEG_INPUT_BGR)
     .value("RGB", nvjpegInputFormat_t::NVJPEG_INPUT_RGB)

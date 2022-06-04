@@ -13,7 +13,7 @@ print('NVJPEG found: {0}'.format(nvjpeg_found))
 
 setup(
     name='nvjpeg_torch',
-    version="0.1.0",
+    version="0.1.1",
     packages=['nvjpeg_torch'],
 
     ext_modules=[
