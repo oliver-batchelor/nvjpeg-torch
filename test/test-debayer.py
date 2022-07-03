@@ -11,7 +11,10 @@ from tqdm import tqdm
 from nvjpeg_torch import Jpeg
 
 import tensorrt as trt
+import torch_tensorrt
+
 from torch2trt import torch2trt
+from debayer import DebayerSplit, Layout
 
 
 device = 'cuda:0'
@@ -20,18 +23,41 @@ dtype = torch.float16
 
 def compile(model, input):
   return torch2trt(model, input, 
-        fp16_mode=True,   log_level=trt.Logger.INFO, max_workspace_size=1<<28)
+        fp16_mode=True,   log_level=trt.Logger.INFO)
 
-class Debayer(nn.Module):
-  def __init__(self, image_size, cfa=color.CFA.RG,  device='cuda:0'):
-    super(Debayer, self).__init__()
 
+def debayer_split(image_size, layout=Layout.RGGB):
+
+  m = DebayerSplit(layout)
+
+  w, h = image_size
+  dummy_input = torch.zeros(1, 1, h, w, 
+      dtype=torch.float16, device=device)
+
+  compiled = torch_tensorrt.compile(
+      torch.jit.script(m),
+      inputs = [dummy_input],
+      enabled_precisions = {torch.half})
+
+  return compiled
+  
+def compile(model, input):
+  return torch2trt(model, input, 
+        fp16_mode=True,   log_level=trt.Logger.INFO)
+
+def debayer_kornia(image_size, cfa=color.CFA.RG):
     m = color.RawToRgb(cfa=cfa)
     w, h = image_size
-
-    self.image_size = image_size
-    self.debayer = compile(m, [torch.zeros(1, 1, h, w, 
+    compiled = compile(m, [torch.zeros(1, 1, h, w, 
       dtype=torch.float16, device=device)])
+
+    return ToHalf(compiled)
+
+class ToHalf(nn.Module):
+  def __init__(self, debayer):
+    super(ToHalf, self).__init__()
+
+    self.debayer = debayer
 
   def forward(self, x):
     x = x.to(dtype=torch.float16)
@@ -42,9 +68,10 @@ class Debayer(nn.Module):
 
 jpeg = Jpeg()
 
-def with_encode(model, input_format=Jpeg.BGR):
+def with_encode(model, input_format=Jpeg.RGB):
   def f(input):
     out = (model(input).squeeze(0)).to(dtype=torch.uint8) 
+
     data = jpeg.encode(out, input_format=input_format, quality=95)
     return data
 
@@ -65,7 +92,7 @@ class Timer:
 def bench_model(name, model, images):
   print("Warmup..")
 
-  for image in tqdm(images):
+  for image in tqdm(images[:len(images) // 4]):
     model(image)
   torch.cuda.synchronize()
 
@@ -105,9 +132,14 @@ def main(args):
   images = [bayer] * args.n
 
   models = dict(
-    kornia = Debayer(
+    kornia = debayer_kornia(
       image_size=(bayer.shape[3], bayer.shape[2]), 
-      cfa = color.CFA.RG)
+      cfa = color.CFA.BG),
+
+    split = debayer_split(
+      image_size=(bayer.shape[3], bayer.shape[2]), 
+      layout = Layout.RGGB),
+
   )
   
   for k, model in models.items():
@@ -133,7 +165,7 @@ def main(args):
 
       image = cv2.imdecode(data, cv2.IMREAD_UNCHANGED)
     else:
-      image = display(from_torch(rgb))
+      image = from_torch(color.rgb_to_bgr(rgb).squeeze(0).permute(1, 2, 0))
 
     if args.show:
       display(image)
