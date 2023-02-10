@@ -97,12 +97,12 @@ class JpegCoder {
 
   JpegCoder() {
     nvjpegCreateSimple(&nv_handle);
-    nvjpegJpegStateCreate(nv_handle, &nv_statue);
+    nvjpegJpegStateCreate(nv_handle, &nv_state);
     nvjpegEncoderStateCreate(nv_handle, &enc_state, NULL);
   }
 
   ~JpegCoder() {
-    nvjpegJpegStateDestroy(nv_statue);
+    nvjpegJpegStateDestroy(nv_state);
     nvjpegEncoderStateDestroy(enc_state);
     nvjpegDestroy(nv_handle);
   }
@@ -161,7 +161,7 @@ class JpegCoder {
 
 
   nvjpegHandle_t nv_handle;
-  nvjpegJpegState_t nv_statue;
+  nvjpegJpegState_t nv_state;
   nvjpegEncoderState_t enc_state;
 };
 

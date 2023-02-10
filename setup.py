@@ -18,7 +18,7 @@ setup(
 
     ext_modules=[
         CUDAExtension('nvjpeg_cuda', 
-        [ 'nvjpeg_cuda.cpp' ],
+        [ 'nvjpeg_cuda.cpp', 'nvjpeg2k_cuda.cpp' ],
         libraries=['nvjpeg'])
     ],
 
