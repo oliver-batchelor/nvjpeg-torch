@@ -1,7 +1,7 @@
 import torch
 import nvjpeg_cuda
+import nvjpeg2k_cuda
 
-from nvjpeg_cuda import write_file, JpegException
 
 Subsampling = nvjpeg_cuda.Jpeg.Subsampling
 
@@ -19,3 +19,11 @@ class Jpeg():
     return self.jpeg.encode(image, quality, input_format, subsampling)
 
 
+
+class Jpeg2k():
+
+  def __init__(self):
+    self.jpeg = nvjpeg2k_cuda.Jpeg2k()
+
+  def encode(self, image, psnr=40):
+    return self.jpeg.encode(image, psnr)

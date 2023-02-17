@@ -11,6 +11,22 @@
 #include "nvjpeg2k.h" 
 
 
+inline const char* error_string(nvjpeg2kStatus_t code) {
+  switch(code) {
+    case NVJPEG2K_STATUS_SUCCESS: return "success";
+    case NVJPEG2K_STATUS_NOT_INITIALIZED: return "not initialized";
+    case NVJPEG2K_STATUS_INVALID_PARAMETER: return "invalid parameter";
+    case NVJPEG2K_STATUS_BAD_JPEG: return "bad jpeg";
+    case NVJPEG2K_STATUS_JPEG_NOT_SUPPORTED: return "not supported";
+    case NVJPEG2K_STATUS_ALLOCATOR_FAILURE: return "allocation failed";
+    case NVJPEG2K_STATUS_EXECUTION_FAILED: return "execution failed";
+    case NVJPEG2K_STATUS_ARCH_MISMATCH: return "arch mismatch";
+    case NVJPEG2K_STATUS_INTERNAL_ERROR: return "internal error";
+    default: return "unknown";
+  }
+}
+
+
 class Jpeg2kException : public std::exception {
   nvjpeg2kStatus_t code;
   std::string context;
@@ -28,120 +44,21 @@ class Jpeg2kException : public std::exception {
     }
 };
 
+class CudaException : public std::exception {
+  cudaError_t code;
+  std::string context;
 
-nvjpeg2kImage_t createImage(torch::Tensor const& data, nvjpegInputFormat_t input_format, size_t &width, size_t &height) const {
-  TORCH_CHECK(data.is_cuda(), "Input image should be on CUDA device");
-  TORCH_CHECK(data.dtype() == torch::kI16, "Input image should be uint8 or int16");
-  TORCH_CHECK(data.is_contiguous(), "Input data should be contiguous");
-
-  bool interleaved = input_format == NVJPEG_INPUT_BGRI || input_format == NVJPEG_INPUT_RGBI;
-
-  if(interleaved) {
-    width = data.size(1);
-    height = data.size(0);
-    return interleavedImage(data);
-  } else {
-    width = data.size(2);
-    height = data.size(1);
-    return planarImage(data);
-  }
-}
-
-nvjpeg2kImageType_t dataType(torch::Tensor const& image) {
-  TORCH_CHECK(image.dim() == 3, "expected 3D tensor (C, H, W)");
-
-  if image.dtype == torch::kU8:
-    return NVJPEG2K_UINT8;
-  else if image.dtype == torch::kU16:
-    return NVJPEG2K_UINT16;
-  else:
-    throw Jpeg2kException(NVJPEG2K_STATUS_IMPLEMENTATION_NOT_SUPPORTED, "Unsupported pixel type");
-}
-
-
-nvjpeg2kImageType_t precision(torch::Tensor const& image) {
-
-  if image.dtype == torch::kU8:
-    return 8
-  else if image.dtype == torch::kU16:
-    return 16
-  else:
-    throw Jpeg2kException(NVJPEG2K_STATUS_IMPLEMENTATION_NOT_SUPPORTED, "Unsupported pixel type");
-}
-
-
-nvjpeg2kImage_t interleavedImage(torch::Tensor const& image) {
-  TORCH_CHECK(image.dim() == 3 && image.size(2) == 3, 
-    "for interleaved (BGRI, RGBI) expected 3D tensor (H, W, C)");
-
-
-  nvjpeg2kImage_t img; 
-  nvjpeg2kImageComponentInfo_t image_comp_info[3];
-  unsigned char *pixel_data[3];
-  size_t *pitch_in_bytes[3];
-
-
-  precision_bits = precision(image);
-  precision_bytes = precision_bits / 8;
-  for (int c = 0; c < 3; c++)
-  {
-    image_comp_info[c].component_width  = image.size(1);
-    image_comp_info[c].component_height = image.size(0);
-    image_comp_info[c].precision        = precision_bits;
-    image_comp_info[c].sgn              = 0;
-  }
-
-
-  size_t plane_stride = at::stride(image, 0) * precision_bytes;
-
-  for(int i = 0; i < 3; i++) {
-    pitch_in_bytes[i] = (unsigned int)at::stride(image, 1) * precision_bytes;
-    pixel_data[i] = (unsigned char*)image.data_ptr() + (plane_stride * i);
-  }
-
-
-  return img;
-}
-
-
-nvjpeg2kImage_t planarImage(torch::Tensor const& image) {
-  TORCH_CHECK(image.dim() == 3 && image.size(0) == 3, 
-    "for planar (BGR, RGB) expected 3D tensor (C, H, W)");
-
-  nvjpeg2kImage_t img; 
-  unsigned char *pixel_data[NUM_COMPONENTS];
-  size_t *pitch_in_bytes[NUM_COMPONENTS];
-
-  precision_bytes = precision(image) / 8;
-  size_t plane_stride = at::stride(image, 0) * precision_bytes;
-
-  for(int i = 0; i < 3; i++) {
-    pitch_in_bytes[i] = (unsigned int)at::stride(image, 1) * precision_bytes;
-    pixel_data[i] = (unsigned char*)image.data_ptr() + (plane_stride * i);
-  }
-
-  input_image.pixel_data = pixel_data;
-  input_image.pixel_type = dataType(image);
-  input_image.pitch_in_bytes = plane_stride * i;
-
-  return img;
-}
-
-inline const char* error_string(nvjpeg2kStatus_t code) {
-  switch(code) {
-    case NVJPEG2K_STATUS_SUCCESS: return "success";
-    case NVJPEG2K_STATUS_NOT_INITIALIZED: return "not initialized";
-    case NVJPEG2K_STATUS_INVALID_PARAMETER: return "invalid parameter";
-    case NVJPEG2K_STATUS_BAD_JPEG: return "bad jpeg";
-    case NVJPEG2K_STATUS_JPEG_NOT_SUPPORTED: return "not supported";
-    case NVJPEG2K_STATUS_ALLOCATOR_FAILURE: return "allocation failed";
-    case NVJPEG2K_STATUS_EXECUTION_FAILED: return "execution failed";
-    case NVJPEG2K_STATUS_ARCH_MISMATCH: return "arch mismatch";
-    case NVJPEG2K_STATUS_INTERNAL_ERROR: return "internal error";
-    default: return "unknown";
-  }
-}
-
+  public:
+    CudaException(std::string const& _context, cudaError_t _code) :
+      code(_code), context(_context)
+    { }
+        
+    const char * what () const throw () {
+      std::stringstream ss;
+      ss << context << ", CUDA error " << code;
+      return ss.str().c_str();
+    }
+};
 
 
 inline void check_nvjpeg2k(std::string const &message, nvjpeg2kStatus_t code) {
@@ -150,27 +67,37 @@ inline void check_nvjpeg2k(std::string const &message, nvjpeg2kStatus_t code) {
   }
 }
 
+inline void check_cuda(std::string const &message, cudaError_t code) {
+  if (code != cudaSuccess) { 
+    throw CudaException(message, code);
+  }   
+}
 
-
-class Jpeg2kCoder {
+class Jpeg2kImage {
   public:
 
-  Jpeg2kCoder() {
-    nvjpeg2kCreateSimple(&nv_handle);
-    nvjpeg2kEncoderStateCreate(&enc_state);
-  }
+  nvjpeg2kImageType_t data_type;
+  int width, height;
 
-  ~Jpeg2kCoder() {
-    nvjpeg2kJpeg2kStateDestroy(nv_statue);
-    nvjpeg2kEncoderStateDestroy(enc_state);
-    nvjpeg2kDestroy(nv_handle);
-  }
+  nvjpeg2kImage_t image; 
+  unsigned char *pixel_data[3];
+  size_t pitch_in_bytes[3];
+  nvjpeg2kImageComponentInfo_t image_comp_info[3];
 
-  inline nvjpeg2kEncoderParams_t createParams(int width, int height, int psnr) {
-    nvjpeg2kEncoderParams_t params;
 
-    nvjpeg2kEncodeParamsCreate(nv_handle, &params);
-    nvjpeg2kEncodeParamsSetQuality(params, psnr);
+
+  int precision_bytes;
+
+
+  inline void createParams(int psnr, nvjpeg2kEncodeParams_t *params) {
+
+    check_nvjpeg2k("nvjpeg2kEncodeParamsCreate",
+      nvjpeg2kEncodeParamsCreate(params));
+
+    check_nvjpeg2k("nvjpeg2kEncodeParamsSetQuality",
+      nvjpeg2kEncodeParamsSetQuality(*params, psnr));
+
+    
 
     nvjpeg2kEncodeConfig_t enc_config;
     memset(&enc_config, 0, sizeof(enc_config));
@@ -179,50 +106,140 @@ class Jpeg2kCoder {
     enc_config.image_width      =  width;
     enc_config.image_height     =  height;
     enc_config.num_components   =  3;
-    enc_config.image_comp_info  =  &image_comp_info;
+    enc_config.image_comp_info  =  image_comp_info;
     enc_config.code_block_w     =  64;
     enc_config.code_block_h     =  64;
-    enc_config.irreversible     =  0
+    enc_config.irreversible     =  0;
     enc_config.mct_mode         =  1;
     enc_config.prog_order       =  NVJPEG2K_LRCP;
-    enc_config.num_resolutions  =  1;
+    enc_config.num_resolutions  =  6;
+    // enc_config.enable_tiling = 1;
 
-    nvjpeg2kStatus_t status = nvjpeg2kEncodeParamsSetEncodeConfig(params, &enc_config);
 
-    return params;
+    check_nvjpeg2k("nvjpeg2kEncodeParamsSetEncodeConfig",
+      nvjpeg2kEncodeParamsSetEncodeConfig(*params, &enc_config));
+
+  }
+
+  Jpeg2kImage(torch::Tensor const& data) {
+
+
+    TORCH_CHECK(data.is_cuda(), "Input image should be on CUDA device");
+    TORCH_CHECK(data.is_contiguous(), "Input data should be contiguous");
+    TORCH_CHECK(data.dim() == 3 && data.size(0) == 3, 
+      "for planar (BGR, RGB) expected 3D tensor (C, H, W)");
+
+    width = data.size(2);
+    height = data.size(1);
+
+
+    if (data.dtype() == torch::kU8) {
+      data_type = NVJPEG2K_UINT8;
+      precision_bytes = 1;
+    } else if (data.dtype() == torch::kI16) {
+
+      data_type = NVJPEG2K_UINT16;
+      precision_bytes = 2;
+    }
+    else { 
+      throw Jpeg2kException("Unsupported pixel type", NVJPEG2K_STATUS_IMPLEMENTATION_NOT_SUPPORTED);
+    }
+
+
+    size_t plane_stride = at::stride(data, 0) * precision_bytes;
+
+    for(int i = 0; i < 3; i++) {
+      pitch_in_bytes[i] = (size_t)at::stride(data, 1) * precision_bytes;
+      pixel_data[i] = (unsigned char*)data.data_ptr() + (plane_stride * i);
+
+      image_comp_info[i].component_width  = width;
+      image_comp_info[i].component_height = height;
+      image_comp_info[i].precision        = precision_bytes * 8;
+      image_comp_info[i].sgn              = 0;        
+    }
+
+    image.pixel_data = (void**)pixel_data;
+    image.pixel_type = data_type;
+    image.pitch_in_bytes = pitch_in_bytes;
+    image.num_components = 3;
+
+  }
+
+
+};
+
+
+
+class Jpeg2kCoder {
+  public:
+
+  nvjpeg2kEncoder_t encoder;
+  nvjpeg2kEncodeState_t enc_state;
+
+  cudaStream_t stream;
+
+  Jpeg2kCoder() {
+    check_nvjpeg2k("nvjpeg2kEncoderCreateSimple",
+      nvjpeg2kEncoderCreateSimple(&encoder));
+
+    check_nvjpeg2k("nvjpeg2kEncodeStateCreate",
+      nvjpeg2kEncodeStateCreate(encoder, &enc_state));
+
+    check_cuda("cudaStreamCreateWithFlags", 
+      cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking));
+  }
+
+  ~Jpeg2kCoder() {
+
+    check_nvjpeg2k("nvjpeg2kEncodeStateDestroy",
+      nvjpeg2kEncodeStateDestroy(enc_state));
+    check_nvjpeg2k("nvjpeg2kEncoderDestroy",
+      nvjpeg2kEncoderDestroy(encoder));
   }
 
 
 
-  torch::Tensor encode(torch::Tensor const& data, int psnr = 35, nvjpeg2kInputFormat_t input_format = NVJPEG2K_INPUT_BGRI, nvjpeg2kChromaSubsampling_t subsampling = NVJPEG2K_CSS_422) {
+
+
+  torch::Tensor encode(torch::Tensor const& data, int psnr = 35) {
     py::gil_scoped_release release;
-    size_t width, height;
 
-    nvjpeg2kImage_t image = createImage(data, input_format, width, height);
-    nvjpeg2k2kEncodeParams_t params = createParams(width, height, psnr);
+    Jpeg2kImage image(data);
 
+    nvjpeg2kEncodeParams_t params;
+    image.createParams(psnr, &params);
+
+    // std::cout << "Encoding image " << image.width << "x" << image.height << std::endl;
+    // std::cout << "Precision: " << image.precision_bytes * 8 << " bits" << std::endl;
+    // std::cout << encoder << " " << enc_state <<  std::endl;
 
     check_nvjpeg2k("nvjpeg2kEncodeImage", 
-      nvjpeg2kEncodeImage(nv_handle, enc_state, params, &image, nullptr));
+      nvjpeg2kEncode(encoder, enc_state, params, &image.image, stream));
 
 
     size_t length;
-    nvjpeg2kEncodeRetrieveBitstream(nv_handle, enc_state, NULL, &length, nullptr);
+    check_nvjpeg2k("nvjpeg2kEncodeRetrieveBitstream", 
+      nvjpeg2kEncodeRetrieveBitstream(encoder, enc_state, NULL, &length, stream));
     auto buffer = torch::empty({ int(length) }, torch::TensorOptions().dtype(torch::kUInt8));
 
-    nvjpeg2kEncodeRetrieveBitstream(nv_handle, enc_state, (unsigned char*)buffer.data_ptr(), &length, nullptr);
-    nvjpeg2kEncoderParamsDestroy(params);
+    check_nvjpeg2k("nvjpeg2kEncodeRetrieveBitstream", 
+      nvjpeg2kEncodeRetrieveBitstream(encoder, enc_state, (unsigned char*)buffer.data_ptr(), &length, stream));
 
+    
+    cudaStreamSynchronize(stream);
+
+    check_nvjpeg2k("nvjpeg2kEncodeParamsDestroy", 
+      nvjpeg2kEncodeParamsDestroy(params));
+
+    
     return buffer;
   }
 
 
-  nvjpeg2k2kEncoder_t nv_handle;
-  nvjpeg2k2kEncodeState_t enc_state;
+
 };
 
   
-
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   auto jpeg = py::class_<Jpeg2kCoder>(m, "Jpeg2k");
 
@@ -233,10 +250,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
       .def("__repr__", [](const Jpeg2kCoder &a) { return "Jpeg2k"; });
   
 
-  py::enum_<nvjpeg2kInputFormat_t>(jpeg, "InputFormat")
-    .value("BGR", nvjpeg2kInputFormat_t::NVJPEG2K_INPUT_BGR)
-    .value("RGB", nvjpeg2kInputFormat_t::NVJPEG2K_INPUT_RGB)
-    .value("BGRI", nvjpeg2kInputFormat_t::NVJPEG2K_INPUT_BGRI)
-    .value("RGBI", nvjpeg2kInputFormat_t::NVJPEG2K_INPUT_RGBI)
-    .export_values();
+
 }

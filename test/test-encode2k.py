@@ -7,7 +7,7 @@ import cv2
 import argparse
 
 import torch
-from nvjpeg_torch import Jpeg, write_file
+from nvjpeg_torch import Jpeg2k
 
 
 
@@ -18,13 +18,16 @@ if __name__=='__main__':
 
   args = parser.parse_args()
   image = cv2.imread(args.filename, cv2.IMREAD_COLOR)
+  image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-  jpeg = Jpeg()
+  jpeg = Jpeg2k()
 
-  data = jpeg.encode(torch.from_numpy(image).cuda(), input_format=Jpeg.BGR)
+  data = jpeg.encode(torch.from_numpy(image).permute(2, 0, 1).contiguous().cuda())
 
-  filename = path.join("out", path.splitext(args.filename)[0] + ".jpg")
+  filename = path.join("out", path.splitext(args.filename)[0] + ".jp2")
   with open(filename, "wb") as f:
     f.write(data.cpu().numpy())
 
   print(f"Wrote {data.shape[0]} bytes to {filename}")
+
+  
