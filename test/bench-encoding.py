@@ -1,5 +1,5 @@
 from turbojpeg import TurboJPEG
-from nvjpeg_torch import Jpeg
+from nvjpeg_torch import Jpeg, Jpeg2k
 import torch
 
 import cv2
@@ -35,8 +35,15 @@ class NvJpeg(object):
     self.jpeg = Jpeg()
 
   def encode(self, image, quality):
-    image = image.cuda()
     compressed = self.jpeg.encode(image, quality)
+
+
+class NvJpeg2k(object):
+  def __init__(self):
+    self.jpeg = Jpeg2k()
+
+  def encode(self, image, quality):
+    compressed = self.jpeg.encode(image, quality // 2)
 
 
 class Threaded(object):
@@ -77,12 +84,12 @@ class Threaded(object):
 
 
 
-def bench_threaded(create_encoder, images, threads):
+def bench_threaded(create_encoder, images, threads, quality=90):
   threads = Threaded(create_encoder, threads)
 
   with Timer() as t:
     for image in images:
-      threads.encode(image)
+      threads.encode(image, quality)
 
     threads.stop()
     torch.cuda.synchronize()
@@ -107,26 +114,23 @@ def main(args):
   num_threads = args.j
 
 
-  print(f'turbojpeg threaded j={num_threads}: {bench_threaded(TurboJPEG, images, num_threads):>5.1f} images/s')
-
-
-  images = [torch.from_numpy(image)] * args.n
-  print(f'nvjpeg (on cpu): {bench_threaded(NvJpeg, images, 1):>5.1f} images/s')
-
-  images = [torch.from_numpy(image).pin_memory()] * args.n
-  print(f'nvjpeg (pinned): {bench_threaded(NvJpeg, images, 1):>5.1f} images/s')
+  print(f'turbojpeg threaded j={num_threads}: {bench_threaded(TurboJPEG, images, num_threads, quality=args.q):>5.1f} images/s')
 
 
   images = [torch.from_numpy(image).cuda()] * args.n
-  print(f'nvjpeg (on gpu): {bench_threaded(NvJpeg, images, 1):>5.1f} images/s')
+  print(f'nvjpeg (on gpu): {bench_threaded(NvJpeg, images, 1, quality=args.q):>5.1f} images/s')
+
+  images = [torch.from_numpy(image).permute(2, 0, 1).cuda().contiguous()] * args.n
+  print(f'nvjpeg2k (on gpu): {bench_threaded(NvJpeg2k, images, num_threads, quality=args.q):>5.1f} images/s')
 
 
 if __name__=='__main__':
   parser = argparse.ArgumentParser(description='Jpeg encoding benchmark.')
   parser.add_argument('filename', type=str, help='filename of image to use')
 
-  parser.add_argument('-j', default=6, type=int, help='run multi-threaded')
+  parser.add_argument('-j', default=12, type=int, help='run multi-threaded')
   parser.add_argument('-n', default=100, type=int, help='number of images to encode')
+  parser.add_argument('-q', default=90, type=int, help='quality')
 
   args = parser.parse_args()
   main(args)

@@ -109,7 +109,10 @@ class Jpeg2kImage {
     enc_config.image_comp_info  =  image_comp_info;
     enc_config.code_block_w     =  64;
     enc_config.code_block_h     =  64;
-    enc_config.irreversible     =  0;
+    // enc_config.tile_width       =  256;
+    // enc_config.tile_height      =  256;
+    // enc_config.enable_tiling    = 1;
+    enc_config.irreversible     =  1;
     enc_config.mct_mode         =  1;
     enc_config.prog_order       =  NVJPEG2K_LRCP;
     enc_config.num_resolutions  =  6;
@@ -126,6 +129,7 @@ class Jpeg2kImage {
 
     TORCH_CHECK(data.is_cuda(), "Input image should be on CUDA device");
     TORCH_CHECK(data.is_contiguous(), "Input data should be contiguous");
+
     TORCH_CHECK(data.dim() == 3 && data.size(0) == 3, 
       "for planar (BGR, RGB) expected 3D tensor (C, H, W)");
 
