@@ -12,6 +12,8 @@ class Jpeg():
   BGRI = nvjpeg_cuda.Jpeg.InputFormat.BGRI
   RGBI = nvjpeg_cuda.Jpeg.InputFormat.RGBI
 
+  Exception = JpegException
+
   def __init__(self):
     self.jpeg = nvjpeg_cuda.Jpeg()
 
